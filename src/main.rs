@@ -15,6 +15,14 @@ struct Request {
     body: Option<String>,
 }
 
+#[derive(Debug)]
+struct Response {
+    http_version: String,
+    status: String,
+    content_type: String,
+    body: Option<String>,
+}
+
 impl Request {
     fn from_raw(input: &[u8]) -> Result<Self, String> {
         let raw = String::from_utf8_lossy(&input).into_owned();
@@ -58,6 +66,23 @@ impl Request {
     }
 }
 
+impl Response {
+    //HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 3\r\n\r\nabc
+    fn to_string(&self) -> String {
+        let http_version = &self.http_version;
+        let status = &self.status;
+        let content_type = &self.content_type;
+        let body = if let Some(_body) = &self.body {
+            _body
+        } else {
+            ""
+        };
+        let content_length: u64 = body.len() as u64;
+
+        format!("{http_version} {status}\r\nContent-type: {content_type}\r\nContent-Length: {content_length}\r\n\r\n{body}")
+    }
+}
+
 fn main() {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     println!("Logs from your program will appear here!");
@@ -84,12 +109,30 @@ fn handle_connection(stream: &mut TcpStream) {
     if bytes_read > 0 {
         let req =
             Request::from_raw(&buf[..bytes_read]).expect("Failed to read request from raw input.");
-        let status = match req.path.as_str() {
-            "/" => "200 OK",
-            _ => "404 Not Found",
+        dbg!("{:#?}", &req);
+
+        let status: String;
+        let body: Option<String>;
+        if req.path.eq("/") {
+            status = String::from("200 OK");
+            body = None;
+        } else if req.path.starts_with("/echo/") {
+            status = String::from("200 OK");
+            body = Some(req.path.split_at(6).1.to_string());
+        } else {
+            status = String::from("404 Not Found");
+            body = None;
+        }
+        let res: Response = Response {
+            http_version: req.http_version.clone(),
+            status: status,
+            content_type: String::from("text/plain"),
+            body: body,
         };
+        dbg!("{:#?}", &res);
+
         stream
-            .write(format!("HTTP/1.1 {status}\r\n\r\n").as_bytes())
+            .write(res.to_string().as_bytes())
             .expect("Failed to write to the incoming connection's stream.");
     }
 }
