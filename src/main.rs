@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::io::Error;
 use std::net::TcpListener;
 use std::{fs, thread};
 use std::{
@@ -117,11 +118,18 @@ fn main() {
     }
 }
 
+fn read_data<const N: usize>(stream: &mut TcpStream) -> Result<(usize, [u8; N]), Error> {
+    let mut buf: [u8; N] = [0; N];
+    let result = stream.read(&mut buf[..]);
+    match result {
+        Ok(bytes_read) => Ok((bytes_read, buf)),
+        Err(err) => Err(err),
+    }
+}
+
 fn handle_connection(mut stream: TcpStream) {
-    let mut buf: [u8; BUF_SIZE] = [0; BUF_SIZE];
-    let bytes_read = stream
-        .read(&mut buf[..])
-        .expect("Failed to read input stream.");
+    let (bytes_read, buf) =
+        read_data::<BUF_SIZE>(&mut stream).expect("Failed to read data from stream.");
     if bytes_read > 0 {
         let req =
             Request::from_raw(&buf[..bytes_read]).expect("Failed to read request from raw input.");
