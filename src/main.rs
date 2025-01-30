@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::net::TcpListener;
+use std::thread;
 use std::{
     io::{Read, Write},
     net::TcpStream,
@@ -20,7 +21,7 @@ struct Request {
 struct Response {
     http_version: String,
     status: String,
-    content_type: String,
+    headers: HashMap<String, String>,
     body: Option<String>,
 }
 
@@ -74,15 +75,19 @@ impl Response {
     fn to_string(&self) -> String {
         let http_version = &self.http_version;
         let status = &self.status;
-        let content_type = &self.content_type;
-        let body = if let Some(_body) = &self.body {
-            _body
+        let headers: String = self
+            .headers
+            .iter()
+            .map(|(key, val)| format!("{}: {}", key, val))
+            .collect::<Vec<String>>()
+            .join("\r\n");
+        let body: &str = if let Some(_body) = &self.body {
+            &format!("Content-Length: {}\r\n\r\n{}", _body.len(), _body)
         } else {
             ""
         };
-        let content_length: u64 = body.len() as u64;
 
-        format!("{http_version} {status}\r\nContent-type: {content_type}\r\nContent-Length: {content_length}\r\n\r\n{body}")
+        format!("{http_version} {status}\r\n{headers}\r\n{body}")
     }
 }
 
@@ -94,8 +99,10 @@ fn main() {
 
     for stream in listener.incoming() {
         match stream {
-            Ok(mut _stream) => {
-                handle_connection(&mut _stream);
+            Ok(_stream) => {
+                thread::spawn(|| {
+                    handle_connection(_stream);
+                });
             }
             Err(e) => {
                 println!("error: {}", e);
@@ -104,7 +111,7 @@ fn main() {
     }
 }
 
-fn handle_connection(stream: &mut TcpStream) {
+fn handle_connection(mut stream: TcpStream) {
     let mut buf: [u8; BUF_SIZE] = [0; BUF_SIZE];
     let bytes_read = stream
         .read(&mut buf[..])
@@ -115,6 +122,7 @@ fn handle_connection(stream: &mut TcpStream) {
         dbg!("{:#?}", &req);
 
         let status: String;
+        let mut headers: HashMap<String, String> = HashMap::new();
         let body: Option<String>;
         if req.path.eq("/") {
             status = String::from("200 OK");
@@ -129,10 +137,16 @@ fn handle_connection(stream: &mut TcpStream) {
             status = String::from("404 Not Found");
             body = None;
         }
+
+        if let Some(_body) = body.as_ref() {
+            headers.insert("Content-Type".to_string(), "text/plain".to_string());
+            headers.insert("Content-Length".to_string(), _body.len().to_string());
+        }
+
         let res: Response = Response {
             http_version: req.http_version.clone(),
             status: status,
-            content_type: String::from("text/plain"),
+            headers: headers,
             body: body,
         };
         dbg!("{:#?}", &res);
