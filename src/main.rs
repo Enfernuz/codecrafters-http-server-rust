@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::net::TcpListener;
-use std::thread;
+use std::{fs, thread};
 use std::{
     io::{Read, Write},
     net::TcpStream,
@@ -18,11 +18,17 @@ struct Request {
 }
 
 #[derive(Debug)]
+struct Content {
+    content_type: String,
+    body: String,
+}
+
+#[derive(Debug)]
 struct Response {
     http_version: String,
     status: String,
     headers: HashMap<String, String>,
-    body: Option<String>,
+    content: Option<Content>,
 }
 
 impl Request {
@@ -81,13 +87,13 @@ impl Response {
             .map(|(key, val)| format!("{}: {}", key, val))
             .collect::<Vec<String>>()
             .join("\r\n");
-        let body: &str = if let Some(_body) = &self.body {
-            &format!("Content-Length: {}\r\n\r\n{}", _body.len(), _body)
+        let body: &str = if let Some(content) = &self.content {
+            &format!("{}", &content.body)
         } else {
             ""
         };
 
-        format!("{http_version} {status}\r\n{headers}\r\n{body}")
+        format!("{http_version} {status}\r\n{headers}\r\n\r\n{body}")
     }
 }
 
@@ -123,31 +129,61 @@ fn handle_connection(mut stream: TcpStream) {
 
         let status: String;
         let mut headers: HashMap<String, String> = HashMap::new();
-        let body: Option<String>;
+        let content: Option<Content>;
         if req.path.eq("/") {
             status = String::from("200 OK");
-            body = None;
+            content = None;
         } else if req.path.eq("/user-agent") {
             status = String::from("200 OK");
-            body = req.headers.get("User-Agent").cloned();
+            content = Some(Content {
+                content_type: "text/plain".to_string(),
+                body: req.headers.get("User-Agent").unwrap().to_string(),
+            });
         } else if req.path.starts_with("/echo/") {
             status = String::from("200 OK");
-            body = Some(req.path.trim_start_matches("/echo/").to_string());
+            content = Some(Content {
+                content_type: "text/plain".to_string(),
+                body: req.path.trim_start_matches("/echo/").to_string(),
+            });
+        } else if req.path.starts_with("/files/") {
+            let root_dir = std::env::args()
+                .nth(2)
+                .expect("Could not read the `--directory` flag value.");
+            let filename = req.path.trim_start_matches("/files/");
+            let path: String = root_dir + filename;
+            let file_content = fs::read_to_string(&path);
+            match file_content {
+                Ok(_content) => {
+                    status = String::from("200 OK");
+                    content = Some(Content {
+                        content_type: "application/octet-stream".to_string(),
+                        body: _content,
+                    })
+                }
+                Err(e) => {
+                    dbg!("Error when reading file at {}: {:?}", &path, &e);
+                    status = String::from("404 Not Found");
+                    content = None;
+                }
+            }
         } else {
             status = String::from("404 Not Found");
-            body = None;
+            content = None;
         }
 
-        if let Some(_body) = body.as_ref() {
-            headers.insert("Content-Type".to_string(), "text/plain".to_string());
-            headers.insert("Content-Length".to_string(), _body.len().to_string());
+        if let Some(_content) = content.as_ref() {
+            headers.insert("Content-Type".to_string(), _content.content_type.clone());
+            headers.insert(
+                "Content-Length".to_string(),
+                _content.body.len().to_string(),
+            );
         }
 
         let res: Response = Response {
             http_version: req.http_version.clone(),
             status: status,
             headers: headers,
-            body: body,
+            content: content,
         };
         dbg!("{:#?}", &res);
 
