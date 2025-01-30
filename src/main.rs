@@ -118,7 +118,8 @@ fn handle_connection(stream: &mut TcpStream) {
             body = None;
         } else if req.path.starts_with("/echo/") {
             status = String::from("200 OK");
-            body = Some(req.path.split_at(6).1.to_string());
+
+            body = Some(req.path.trim_start_matches("/echo/").to_string());
         } else {
             status = String::from("404 Not Found");
             body = None;
