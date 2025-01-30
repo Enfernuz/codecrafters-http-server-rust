@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::net::TcpListener;
 use std::{
     io::{Read, Write},
@@ -11,7 +12,7 @@ struct Request {
     method: String,
     path: String,
     http_version: String,
-    headers: Vec<(String, String)>,
+    headers: HashMap<String, String>,
     body: Option<String>,
 }
 
@@ -38,7 +39,7 @@ impl Request {
         let path = parts[1].to_string();
         let http_version = parts[2].to_string();
         // Parse headers
-        let mut headers = Vec::new();
+        let mut headers = HashMap::new();
         let mut body_start = 0;
         for (i, line) in lines.iter().enumerate().skip(1) {
             if line.is_empty() {
@@ -46,7 +47,9 @@ impl Request {
                 break;
             }
             match line.split_once(": ") {
-                Some((key, value)) => headers.push((key.to_string(), value.to_string())),
+                Some((key, value)) => {
+                    headers.insert(key.to_string(), value.to_string());
+                }
                 _ => return Err(format!("Malformed header: {}", line)),
             }
         }
@@ -116,9 +119,11 @@ fn handle_connection(stream: &mut TcpStream) {
         if req.path.eq("/") {
             status = String::from("200 OK");
             body = None;
+        } else if req.path.eq("/user-agent") {
+            status = String::from("200 OK");
+            body = req.headers.get("User-Agent").cloned();
         } else if req.path.starts_with("/echo/") {
             status = String::from("200 OK");
-
             body = Some(req.path.trim_start_matches("/echo/").to_string());
         } else {
             status = String::from("404 Not Found");
