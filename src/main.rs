@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Error;
 use std::net::TcpListener;
@@ -21,6 +21,7 @@ use crate::http::Status;
 use crate::http::TextContentType;
 
 const BUF_SIZE: usize = 1024;
+const GZIP_ENCODING: &str = "gzip";
 
 fn main() {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
@@ -119,12 +120,19 @@ fn handle_request(req: &Request) -> Response {
         content = None;
     }
 
-    let encoding = req.get_headers().get("Accept-Encoding").map(String::as_str);
-    if let Some("gzip") = encoding {
+    let accepted_encodings: HashSet<&str> = req
+        .get_headers()
+        .get("Accept-Encoding")
+        .iter()
+        .flat_map(|list| list.split(','))
+        .map(str::trim)
+        .collect::<HashSet<&str>>();
+
+    if accepted_encodings.contains(GZIP_ENCODING) {
         content = content.map(|_content| Content {
             content_type: _content.content_type,
             body: _content.body, // no real compression at the moment
-            encoding: Some("gzip".to_owned()),
+            encoding: Some(GZIP_ENCODING.to_owned()),
         });
     }
 
