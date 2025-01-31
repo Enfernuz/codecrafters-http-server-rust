@@ -43,9 +43,10 @@ impl Request {
         if parts.len() != 3 {
             return Err("Malformed request: Invalid request line: {}".to_string());
         }
-        let method = parts[0].to_string();
-        let path = parts[1].to_string();
-        let http_version = parts[2].to_string();
+
+        let method: &str = parts[0];
+        let path: &str = parts[1];
+        let http_version: &str = parts[2];
         // Parse headers
         let mut headers = HashMap::new();
         let mut body_start = 0;
@@ -56,7 +57,7 @@ impl Request {
             }
             match line.split_once(": ") {
                 Some((key, value)) => {
-                    headers.insert(key.to_string(), value.to_string());
+                    headers.insert(key.to_owned(), value.to_owned());
                 }
                 _ => return Err(format!("Malformed header: {}", line)),
             }
@@ -68,9 +69,9 @@ impl Request {
             None
         };
         Ok(Self {
-            method,
-            path,
-            http_version,
+            method: method.to_owned(),
+            path: path.to_owned(),
+            http_version: http_version.to_owned(),
             headers,
             body,
         })
