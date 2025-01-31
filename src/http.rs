@@ -2,9 +2,11 @@ pub mod request {
 
     use std::collections::HashMap;
 
+    use super::HttpMethod;
+
     #[derive(Debug, Default)]
     pub struct Request {
-        method: String,
+        method: HttpMethod,
         path: String,
         http_version: String,
         headers: HashMap<String, String>,
@@ -12,7 +14,7 @@ pub mod request {
     }
 
     impl Request {
-        pub fn get_method(&'_ self) -> &'_ str {
+        pub fn get_method(&'_ self) -> &'_ HttpMethod {
             &self.method
         }
 
@@ -43,7 +45,7 @@ pub mod request {
                 return Err("Malformed request: Invalid request line: {}".to_string());
             }
 
-            let method: &str = parts[0];
+            let method: HttpMethod = HttpMethod::from_string(parts[0]);
             let path: &str = parts[1];
             let http_version: &str = parts[2];
             // Parse headers
@@ -68,7 +70,7 @@ pub mod request {
                 None
             };
             Ok(Self {
-                method: method.to_owned(),
+                method,
                 path: path.to_owned(),
                 http_version: http_version.to_owned(),
                 headers,
@@ -120,24 +122,54 @@ pub mod response {
     }
 }
 
+#[derive(Debug, Default)]
+pub enum HttpMethod {
+    #[default]
+    Get,
+    Post,
+}
+
 #[derive(Debug)]
 pub enum Status {
     Ok,
+    Created,
     NotFound,
+    InternalServerError,
+}
+
+impl HttpMethod {
+    pub fn to_string(&'_ self) -> &'_ str {
+        match self {
+            Self::Get => "GET",
+            Self::Post => "POST",
+        }
+    }
+
+    pub fn from_string(string: &str) -> HttpMethod {
+        match string {
+            "GET" => Self::Get,
+            "POST" => Self::Post,
+            _ => panic!("Unable to parse HTTP method from {}", string),
+        }
+    }
 }
 
 impl Status {
     pub fn get_status_code(&self) -> u16 {
         match self {
             Self::Ok => 200,
+            Self::Created => 201,
             Self::NotFound => 404,
+            Self::InternalServerError => 500,
         }
     }
 
     pub fn get_text_code(&'_ self) -> &'_ str {
         match self {
             Self::Ok => "OK",
+            Self::Created => "Created",
             Self::NotFound => "Not Found",
+            Self::InternalServerError => "Internal Server Error",
         }
     }
 

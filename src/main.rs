@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fs::File;
 use std::io::Error;
 use std::net::TcpListener;
 use std::{fs, thread};
@@ -8,6 +9,8 @@ use std::{
 };
 
 mod http;
+
+use http::HttpMethod;
 
 use crate::http::request::Request;
 use crate::http::response::Content;
@@ -72,16 +75,42 @@ fn handle_request(req: &Request) -> Response {
         let file_path: String = get_file_root_dir()
             .map(|file_root_dir| file_root_dir + filename)
             .expect("Could not read the `--directory` flag value.");
-        match read_file_content(&file_path) {
-            Ok(_content) => {
-                status = Status::Ok;
-                content = Some(_content);
-            }
-            Err(err) => {
-                dbg!("Error when reading file at {}: {:?}", &file_path, &err);
-                status = Status::NotFound;
-                content = None;
-            }
+        match req.get_method() {
+            HttpMethod::Get => match read_file_content(&file_path) {
+                Ok(_content) => {
+                    status = Status::Ok;
+                    content = Some(_content);
+                }
+                Err(err) => {
+                    dbg!("Error when reading file at {}: {:?}", &file_path, &err);
+                    status = Status::NotFound;
+                    content = None;
+                }
+            },
+            HttpMethod::Post => match File::create(&file_path) {
+                Ok(mut file) => {
+                    match req
+                        .get_body()
+                        .as_ref()
+                        .map(|body| file.write(body.as_bytes()))
+                    {
+                        Some(Err(err)) => {
+                            dbg!("Error when writing to file at {}: {:?}", &file_path, &err);
+                            status = Status::InternalServerError;
+                            content = None;
+                        }
+                        _ => {
+                            status = Status::Created;
+                            content = None;
+                        }
+                    }
+                }
+                Err(err) => {
+                    dbg!("Error when creating file at {}: {:?}", &file_path, &err);
+                    status = Status::InternalServerError;
+                    content = None;
+                }
+            },
         }
     } else {
         status = Status::NotFound;
