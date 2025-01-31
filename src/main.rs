@@ -7,97 +7,14 @@ use std::{
     net::TcpStream,
 };
 
+mod http;
+
+use crate::http::request::Request;
+use crate::http::response::Content;
+use crate::http::response::Response;
+use crate::http::Status;
+
 const BUF_SIZE: usize = 1024;
-
-#[derive(Debug, Default)]
-struct Request {
-    method: String,
-    path: String,
-    http_version: String,
-    headers: HashMap<String, String>,
-    body: Option<String>,
-}
-
-#[derive(Debug)]
-struct Content {
-    content_type: String,
-    body: String,
-}
-
-#[derive(Debug)]
-struct Response {
-    http_version: String,
-    status: String,
-    headers: HashMap<String, String>,
-    content: Option<Content>,
-}
-
-impl Request {
-    fn from_raw(input: &[u8]) -> Result<Self, String> {
-        let raw = String::from_utf8_lossy(&input).into_owned();
-        let lines: Vec<&str> = raw.split("\r\n").collect();
-
-        // Parse request line
-        let request_line = lines.first().ok_or("Invalid request: request is empty")?;
-        let parts: Vec<&str> = request_line.split_whitespace().collect();
-        if parts.len() != 3 {
-            return Err("Malformed request: Invalid request line: {}".to_string());
-        }
-
-        let method: &str = parts[0];
-        let path: &str = parts[1];
-        let http_version: &str = parts[2];
-        // Parse headers
-        let mut headers = HashMap::new();
-        let mut body_start = 0;
-        for (i, line) in lines.iter().enumerate().skip(1) {
-            if line.is_empty() {
-                body_start = i + 1;
-                break;
-            }
-            match line.split_once(": ") {
-                Some((key, value)) => {
-                    headers.insert(key.to_owned(), value.to_owned());
-                }
-                _ => return Err(format!("Malformed header: {}", line)),
-            }
-        }
-        // Parse body
-        let body = if body_start < lines.len() {
-            Some(lines[body_start..].join("\r\n"))
-        } else {
-            None
-        };
-        Ok(Self {
-            method: method.to_owned(),
-            path: path.to_owned(),
-            http_version: http_version.to_owned(),
-            headers,
-            body,
-        })
-    }
-}
-
-impl Response {
-    //HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 3\r\n\r\nabc
-    fn to_string(&self) -> String {
-        let http_version = &self.http_version;
-        let status = &self.status;
-        let headers: String = self
-            .headers
-            .iter()
-            .map(|(key, val)| format!("{}: {}", key, val))
-            .collect::<Vec<String>>()
-            .join("\r\n");
-        let body: &str = if let Some(content) = &self.content {
-            &format!("{}", &content.body)
-        } else {
-            ""
-        };
-
-        format!("{http_version} {status}\r\n{headers}\r\n\r\n{body}")
-    }
-}
 
 fn main() {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
@@ -136,34 +53,34 @@ fn handle_connection(mut stream: TcpStream) {
             Request::from_raw(&buf[..bytes_read]).expect("Failed to read request from raw input.");
         dbg!("{:#?}", &req);
 
-        let status: String;
-        let mut headers: HashMap<String, String> = HashMap::new();
+        let status: Status;
         let content: Option<Content>;
-        if req.path.eq("/") {
-            status = String::from("200 OK");
+        let request_path = req.get_path();
+        if request_path.eq("/") {
+            status = Status::Ok;
             content = None;
-        } else if req.path.eq("/user-agent") {
-            status = String::from("200 OK");
+        } else if request_path.eq("/user-agent") {
+            status = Status::Ok;
             content = Some(Content {
                 content_type: "text/plain".to_string(),
-                body: req.headers.get("User-Agent").unwrap().to_string(),
+                body: req.get_headers().get("User-Agent").unwrap().to_owned(),
             });
-        } else if req.path.starts_with("/echo/") {
-            status = String::from("200 OK");
+        } else if request_path.starts_with("/echo/") {
+            status = Status::Ok;
             content = Some(Content {
                 content_type: "text/plain".to_string(),
-                body: req.path.trim_start_matches("/echo/").to_string(),
+                body: request_path.trim_start_matches("/echo/").to_string(),
             });
-        } else if req.path.starts_with("/files/") {
+        } else if request_path.starts_with("/files/") {
             let root_dir = std::env::args()
                 .nth(2)
                 .expect("Could not read the `--directory` flag value.");
-            let filename = req.path.trim_start_matches("/files/");
+            let filename = request_path.trim_start_matches("/files/");
             let path: String = root_dir + filename;
             let file_content = fs::read_to_string(&path);
             match file_content {
                 Ok(_content) => {
-                    status = String::from("200 OK");
+                    status = Status::Ok;
                     content = Some(Content {
                         content_type: "application/octet-stream".to_string(),
                         body: _content,
@@ -171,15 +88,16 @@ fn handle_connection(mut stream: TcpStream) {
                 }
                 Err(e) => {
                     dbg!("Error when reading file at {}: {:?}", &path, &e);
-                    status = String::from("404 Not Found");
+                    status = Status::NotFound;
                     content = None;
                 }
             }
         } else {
-            status = String::from("404 Not Found");
+            status = Status::NotFound;
             content = None;
         }
 
+        let mut headers: HashMap<String, String> = HashMap::new();
         if let Some(_content) = content.as_ref() {
             headers.insert("Content-Type".to_string(), _content.content_type.clone());
             headers.insert(
@@ -189,7 +107,7 @@ fn handle_connection(mut stream: TcpStream) {
         }
 
         let res: Response = Response {
-            http_version: req.http_version.clone(),
+            http_version: req.get_http_version().to_owned(),
             status: status,
             headers: headers,
             content: content,
