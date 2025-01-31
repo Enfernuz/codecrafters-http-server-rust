@@ -53,7 +53,7 @@ fn read_data<const N: usize>(stream: &mut TcpStream) -> Result<(usize, [u8; N]),
 
 fn handle_request(req: &Request) -> Response {
     let status: Status;
-    let content: Option<Content>;
+    let mut content: Option<Content>;
     let request_path = req.get_path();
     if request_path.eq("/") {
         status = Status::Ok;
@@ -63,12 +63,14 @@ fn handle_request(req: &Request) -> Response {
         content = Some(Content {
             content_type: ContentType::Text(TextContentType::Plain),
             body: req.get_headers().get("User-Agent").unwrap().to_owned(),
+            encoding: None,
         });
     } else if request_path.starts_with("/echo/") {
         status = Status::Ok;
         content = Some(Content {
             content_type: ContentType::Text(TextContentType::Plain),
             body: request_path.trim_start_matches("/echo/").to_string(),
+            encoding: None,
         });
     } else if request_path.starts_with("/files/") {
         let filename = request_path.trim_start_matches("/files/");
@@ -117,6 +119,15 @@ fn handle_request(req: &Request) -> Response {
         content = None;
     }
 
+    let encoding = req.get_headers().get("Accept-Encoding").map(String::as_str);
+    if let Some("gzip") = encoding {
+        content = content.map(|_content| Content {
+            content_type: _content.content_type,
+            body: _content.body, // no real compression at the moment
+            encoding: Some("gzip".to_owned()),
+        });
+    }
+
     let mut headers: HashMap<String, String> = HashMap::new();
     if let Some(_content) = content.as_ref() {
         headers.insert(
@@ -127,6 +138,9 @@ fn handle_request(req: &Request) -> Response {
             "Content-Length".to_string(),
             _content.body.len().to_string(),
         );
+        if let Some(encoding) = _content.encoding.as_ref() {
+            headers.insert("Content-Encoding".to_string(), encoding.clone());
+        }
     }
 
     Response {
@@ -154,6 +168,7 @@ fn read_file_content(path: &str) -> Result<Content, Error> {
     fs::read_to_string(&path).map(|content| Content {
         content_type: ContentType::Application(ApplicationContentType::OctetStream),
         body: content,
+        encoding: None, // TODO: set encoding according to the file's extension
     })
 }
 

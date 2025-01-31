@@ -90,6 +90,7 @@ pub mod response {
     pub struct Content {
         pub content_type: ContentType,
         pub body: String,
+        pub encoding: Option<String>,
     }
 
     #[derive(Debug)]
