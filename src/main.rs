@@ -68,22 +68,17 @@ fn handle_request(req: &Request) -> Response {
             body: request_path.trim_start_matches("/echo/").to_string(),
         });
     } else if request_path.starts_with("/files/") {
-        let root_dir = std::env::args()
-            .nth(2)
-            .expect("Could not read the `--directory` flag value.");
         let filename = request_path.trim_start_matches("/files/");
-        let path: String = root_dir + filename;
-        let file_content = fs::read_to_string(&path);
-        match file_content {
+        let file_path: String = get_file_root_dir()
+            .map(|file_root_dir| file_root_dir + filename)
+            .expect("Could not read the `--directory` flag value.");
+        match read_file_content(&file_path) {
             Ok(_content) => {
                 status = Status::Ok;
-                content = Some(Content {
-                    content_type: ContentType::Application(ApplicationContentType::OctetStream),
-                    body: _content,
-                })
+                content = Some(_content);
             }
-            Err(e) => {
-                dbg!("Error when reading file at {}: {:?}", &path, &e);
+            Err(err) => {
+                dbg!("Error when reading file at {}: {:?}", &file_path, &err);
                 status = Status::NotFound;
                 content = None;
             }
@@ -124,4 +119,17 @@ fn handle_connection(mut stream: TcpStream) {
             .write(res.to_string().as_bytes())
             .expect("Failed to write to the incoming connection's stream.");
     }
+}
+
+fn read_file_content(path: &str) -> Result<Content, String> {
+    fs::read_to_string(&path)
+        .map(|content| Content {
+            content_type: ContentType::Application(ApplicationContentType::OctetStream),
+            body: content,
+        })
+        .or_else(|err| Err(err.kind().to_string()))
+}
+
+fn get_file_root_dir() -> Option<String> {
+    std::env::args().nth(2)
 }
