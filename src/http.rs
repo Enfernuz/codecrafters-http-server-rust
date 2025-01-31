@@ -82,9 +82,11 @@ pub mod response {
 
     use std::collections::HashMap;
 
+    use super::ContentType;
+
     #[derive(Debug)]
     pub struct Content {
-        pub content_type: String,
+        pub content_type: ContentType,
         pub body: String,
     }
 
@@ -141,5 +143,46 @@ impl Status {
 
     pub fn to_string(&self) -> String {
         format!("{} {}", self.get_status_code(), self.get_text_code())
+    }
+}
+
+#[derive(Debug)]
+pub enum TextContentType {
+    Plain,
+}
+
+#[derive(Debug)]
+pub enum ApplicationContentType {
+    OctetStream,
+}
+
+#[derive(Debug)]
+pub enum ContentType {
+    Text(TextContentType),
+    Application(ApplicationContentType),
+}
+
+impl TextContentType {
+    fn to_string(&self) -> &str {
+        match self {
+            Self::Plain => "plain",
+        }
+    }
+}
+
+impl ApplicationContentType {
+    fn to_string(&self) -> &str {
+        match self {
+            Self::OctetStream => "octet-stream",
+        }
+    }
+}
+
+impl ContentType {
+    pub fn to_string(&self) -> String {
+        match self {
+            Self::Text(sub_type) => format!("text/{}", sub_type.to_string()),
+            Self::Application(sub_type) => format!("application/{}", sub_type.to_string()),
+        }
     }
 }

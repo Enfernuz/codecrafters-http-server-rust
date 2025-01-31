@@ -12,7 +12,10 @@ mod http;
 use crate::http::request::Request;
 use crate::http::response::Content;
 use crate::http::response::Response;
+use crate::http::ApplicationContentType;
+use crate::http::ContentType;
 use crate::http::Status;
+use crate::http::TextContentType;
 
 const BUF_SIZE: usize = 1024;
 
@@ -55,13 +58,13 @@ fn handle_request(req: &Request) -> Response {
     } else if request_path.eq("/user-agent") {
         status = Status::Ok;
         content = Some(Content {
-            content_type: "text/plain".to_string(),
+            content_type: ContentType::Text(TextContentType::Plain),
             body: req.get_headers().get("User-Agent").unwrap().to_owned(),
         });
     } else if request_path.starts_with("/echo/") {
         status = Status::Ok;
         content = Some(Content {
-            content_type: "text/plain".to_string(),
+            content_type: ContentType::Text(TextContentType::Plain),
             body: request_path.trim_start_matches("/echo/").to_string(),
         });
     } else if request_path.starts_with("/files/") {
@@ -75,7 +78,7 @@ fn handle_request(req: &Request) -> Response {
             Ok(_content) => {
                 status = Status::Ok;
                 content = Some(Content {
-                    content_type: "application/octet-stream".to_string(),
+                    content_type: ContentType::Application(ApplicationContentType::OctetStream),
                     body: _content,
                 })
             }
@@ -92,7 +95,10 @@ fn handle_request(req: &Request) -> Response {
 
     let mut headers: HashMap<String, String> = HashMap::new();
     if let Some(_content) = content.as_ref() {
-        headers.insert("Content-Type".to_string(), _content.content_type.clone());
+        headers.insert(
+            "Content-Type".to_string(),
+            _content.content_type.to_string(),
+        );
         headers.insert(
             "Content-Length".to_string(),
             _content.body.len().to_string(),
