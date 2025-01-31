@@ -150,13 +150,11 @@ fn handle_connection(mut stream: TcpStream) {
     }
 }
 
-fn read_file_content(path: &str) -> Result<Content, String> {
-    fs::read_to_string(&path)
-        .map(|content| Content {
-            content_type: ContentType::Application(ApplicationContentType::OctetStream),
-            body: content,
-        })
-        .or_else(|err| Err(err.kind().to_string()))
+fn read_file_content(path: &str) -> Result<Content, Error> {
+    fs::read_to_string(&path).map(|content| Content {
+        content_type: ContentType::Application(ApplicationContentType::OctetStream),
+        body: content,
+    })
 }
 
 fn get_file_root_dir() -> Option<String> {
