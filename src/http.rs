@@ -84,12 +84,14 @@ pub mod response {
 
     use std::collections::HashMap;
 
+    use bytes::BufMut;
+
     use super::ContentType;
 
     #[derive(Debug)]
     pub struct Content {
         pub content_type: ContentType,
-        pub body: String,
+        pub body: Vec<u8>,
         pub encoding: Option<String>,
     }
 
@@ -113,12 +115,31 @@ pub mod response {
                 .collect::<Vec<String>>()
                 .join("\r\n");
             let body = if let Some(content) = &self.content {
-                &format!("{}", &content.body)
+                &format!("{}", String::from_utf8_lossy(content.body.as_slice()))
             } else {
                 ""
             };
 
             format!("{http_version} {status}\r\n{headers}\r\n\r\n{body}")
+        }
+
+        pub fn as_bytes(&self) -> Vec<u8> {
+            let http_version = &self.http_version;
+            let status = &self.status.to_string();
+            let headers = &self
+                .headers
+                .iter()
+                .map(|(key, val)| format!("{}: {}", key, val))
+                .collect::<Vec<String>>()
+                .join("\r\n");
+
+            let response_without_body = format!("{http_version} {status}\r\n{headers}\r\n\r\n");
+            let mut result = Vec::<u8>::new();
+            result.put_slice(response_without_body.as_bytes());
+            if let Some(content) = &self.content {
+                result.put_slice(content.body.as_slice());
+            }
+            result
         }
     }
 }

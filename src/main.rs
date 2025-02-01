@@ -1,3 +1,5 @@
+use flate2::write::GzEncoder;
+use flate2::Compression;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Error;
@@ -9,7 +11,6 @@ use std::{
 };
 
 mod http;
-
 use http::HttpMethod;
 
 use crate::http::request::Request;
@@ -53,7 +54,7 @@ fn read_data<const N: usize>(stream: &mut TcpStream) -> Result<(usize, [u8; N]),
 }
 
 fn handle_request(req: &Request) -> Response {
-    let status: Status;
+    let mut status: Status;
     let mut content: Option<Content>;
     let request_path = req.get_path();
     if request_path.eq("/") {
@@ -63,14 +64,22 @@ fn handle_request(req: &Request) -> Response {
         status = Status::Ok;
         content = Some(Content {
             content_type: ContentType::Text(TextContentType::Plain),
-            body: req.get_headers().get("User-Agent").unwrap().to_owned(),
+            body: req
+                .get_headers()
+                .get("User-Agent")
+                .unwrap()
+                .as_bytes()
+                .to_vec(),
             encoding: None,
         });
     } else if request_path.starts_with("/echo/") {
         status = Status::Ok;
         content = Some(Content {
             content_type: ContentType::Text(TextContentType::Plain),
-            body: request_path.trim_start_matches("/echo/").to_string(),
+            body: request_path
+                .trim_start_matches("/echo/")
+                .as_bytes()
+                .to_vec(),
             encoding: None,
         });
     } else if request_path.starts_with("/files/") {
@@ -129,11 +138,22 @@ fn handle_request(req: &Request) -> Response {
         .collect::<HashSet<&str>>();
 
     if accepted_encodings.contains(GZIP_ENCODING) {
-        content = content.map(|_content| Content {
-            content_type: _content.content_type,
-            body: _content.body, // no real compression at the moment
-            encoding: Some(GZIP_ENCODING.to_owned()),
-        });
+        if let Some(_content) = content.as_ref() {
+            match gzip(_content.body.as_slice()) {
+                Ok(payload) => {
+                    content = content.map(|c| Content {
+                        content_type: c.content_type,
+                        body: payload,
+                        encoding: Some(GZIP_ENCODING.to_owned()),
+                    });
+                }
+                Err(err) => {
+                    dbg!("Failed to Gzip the content: {}", err);
+                    status = Status::InternalServerError;
+                    content = None;
+                }
+            }
+        }
     }
 
     let mut headers: HashMap<String, String> = HashMap::new();
@@ -166,8 +186,9 @@ fn handle_connection(mut stream: TcpStream) {
         let req =
             Request::from_raw(&buf[..bytes_read]).expect("Failed to read request from raw input.");
         let res = handle_request(&req);
+        dbg!("Response: {}", res.to_string());
         stream
-            .write(res.to_string().as_bytes())
+            .write(res.as_bytes().as_slice())
             .expect("Failed to write to the incoming connection's stream.");
     }
 }
@@ -175,11 +196,17 @@ fn handle_connection(mut stream: TcpStream) {
 fn read_file_content(path: &str) -> Result<Content, Error> {
     fs::read_to_string(&path).map(|content| Content {
         content_type: ContentType::Application(ApplicationContentType::OctetStream),
-        body: content,
+        body: content.as_bytes().to_vec(),
         encoding: None, // TODO: set encoding according to the file's extension
     })
 }
 
 fn get_file_root_dir() -> Option<String> {
     std::env::args().nth(2)
+}
+
+fn gzip(bytes: &[u8]) -> std::io::Result<Vec<u8>> {
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(bytes)?;
+    encoder.finish()
 }
